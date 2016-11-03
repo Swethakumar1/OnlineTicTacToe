@@ -1,0 +1,402 @@
+package onlinetictactoe; 
+import java.awt.GridLayout;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.net.*;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import javax.swing.JButton;
+import javax.swing.JFrame;
+import javax.swing.JOptionPane;
+/**
+*
+* @author Swetha Kumar
+*/
+public class OnlineTicTacToe implements ActionListener {
+private final int INTERVAL = 1000; // 1 second
+private final int NBUTTONS = 9; // #bottons
+private ObjectInputStream input = null; // input from my counterpart
+private ObjectOutputStream output = null; // output from my counterpart
+private JFrame window = null; // the tic-tac-toe window
+private JButton[] button = new JButton[NBUTTONS]; // button[0] - button[9]
+private boolean[] myTurn = new boolean[1]; // T: my turn, F: your turn
+private String myMark = null; // "O" or "X"
+private String yourMark = null; // "X" or "O"
+/**
+* Prints out the usage.
+*/
+private static void usage() {
+System.err.
+println("Usage: java OnlineTicTacToe ipAddr ipPort(>=5000)");
+System.exit(-1);
+}
+/**
+* Prints out the stack trace upon a given error and quits the application.
+*
+* @param an exception
+*/
+private static void error(Exception e) {
+e.printStackTrace();
+System.exit(-1);
+}
+/**
+* Starts the online tic-tac-toe game.
+*
+* @param args[0]: my counterpart's ip address, args[0]: his/her port
+*/
+public static void main(String[] args) {
+// verify the number of arguments
+  if (args.length != 2) {
+    usage();
+}
+// verify the correctness of my counterpart address
+InetAddress addr = null;
+  try {
+  addr = InetAddress.getByName(args[0]);
+  } catch (UnknownHostException e) {
+error(e);
+}
+// verify the correctness of my counterpart port
+int port = 0;
+  try {
+  port = Integer.parseInt(args[1]);
+  } catch (NumberFormatException e) {
+error(e);
+}
+if (port < 5000) {
+usage();
+}
+// now start the application
+OnlineTicTacToe game = new OnlineTicTacToe(addr, port);
+}
+/**
+* Is the constructor that sets up a TCP connection with my counterpart,
+* brings up a game window, and starts a slave thread for listening to my
+* counterpart.
+*
+* @param my counterpart's ip address
+* @param my counterpart's port
+*/
+public OnlineTicTacToe(InetAddress addr, int port) {
+// set up a TCP connection with my counterpart
+boolean setWindow = createConnection(addr, port);
+// set up a window
+makeWindow(setWindow); // or makeWindow( false );
+// start my counterpart thread
+Counterpart counterpart = new Counterpart();
+counterpart.start();
+}
+private boolean createConnection(InetAddress addr, int port) {
+ServerSocket server = null;
+Socket client = null;
+boolean isClient = true, hasClientConnected = false;
+  try {
+  server = new ServerSocket(port);
+// Disable blocking I/O operations, by specifying a timeout
+  server.setSoTimeout(INTERVAL);
+  } catch (Exception e) {
+// if client is already set, server is ready to accept the client.
+  hasClientConnected = true;
+  }
+  while (true) {
+  if (!hasClientConnected) {
+  try {
+  client = server.accept();
+  } catch (SocketTimeoutException ste) {
+// once timeout happens, proceed without termination
+  } catch (IOException ioe) {
+  error(ioe);
+}
+if (client != null) {
+// Player has connected
+isClient = false;
+break;
+}
+}
+// This should continue until we accept a client.
+if (!hasClientConnected) {
+continue;
+}
+try {
+if (client == null) {
+client = new Socket(addr, port);
+}
+} catch (IOException ioe) {
+}
+if (client == null && !hasClientConnected) {
+continue;
+}
+isClient = true;
+break;
+}
+System.out.println("TCP connection established");
+try {
+if (isClient) {
+// if client writes to the object stream
+output = new ObjectOutputStream(client.getOutputStream());
+input = new ObjectInputStream(client.getInputStream());
+output.writeObject("Hi, ready for the game?");
+} else {
+// if server reads the input stream
+input = new ObjectInputStream(client.getInputStream());
+output = new ObjectOutputStream(client.getOutputStream());
+System.out.println((String) input.readObject());
+}
+} catch (IOException ioe) {
+error(ioe);
+} catch (ClassNotFoundException cnfe) {
+error(cnfe);
+}
+return isClient;
+}
+/**
+* Creates a 3x3 window for the tic-tac-toe game
+*
+* @param true if this window is created by the 1st player, false by the 2nd
+* player
+*/
+private void makeWindow(boolean amFormer) {
+myTurn[0] = amFormer;
+myMark = (amFormer) ? "O" : "X"; // 1st person uses "O"
+yourMark = (amFormer) ? "X" : "O"; // 2nd person uses "X"
+// create a window
+window = new JFrame("OnlineTicTacToe("
++ ((amFormer) ? "former)" : "latter)") + myMark);
+window.setSize(300, 300);
+window.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+window.setLayout(new GridLayout(3, 3));
+// initialize all nine cells.
+for (int i = 0; i < NBUTTONS; i++) {
+button[i] = new JButton();
+window.add(button[i]);
+button[i].addActionListener(this);
+}
+// make it visible
+window.setVisible(true);
+}
+/**
+* Marks the i-th button with mark ("O" or "X")
+*
+* @param the i-th button
+* @param a mark ( "O" or "X" )
+* @param true if it has been marked in success
+*/
+private boolean markButton(int i, String mark) {
+if (button[i].getText().equals("")) {
+button[i].setText(mark);
+button[i].setEnabled(false);
+return true;
+}
+return false;
+}
+/**
+* Checks which button has been clicked
+*
+* @param an event passed from AWT
+* @return an integer (0 through to 8) that shows which button has been
+* clicked. -1 upon an error.
+*/
+private int whichButtonClicked(ActionEvent event) {
+for (int i = 0; i < NBUTTONS; i++) {
+if (event.getSource() == button[i]) {
+return i;
+}
+}
+return -1;
+}
+/**
+* Checks if the i-th button has been marked with mark( "O" or "X" ).
+*
+* @param the i-th button
+* @param a mark ( "O" or "X" )
+* @return true if the i-th button has been marked with mark.
+*/
+private boolean buttonMarkedWith(int i, String mark) {
+return button[i].getText().equals(mark);
+}
+/**
+* Pops out another small window indicating that mark("O" or "X") won!
+*
+* @param a mark ( "O" or "X" )
+*/
+private void showWon(String mark) {
+JOptionPane.showMessageDialog(null, mark + " won!");;
+int a = JOptionPane.showConfirmDialog(window, "Would you want a new game?");
+int b = 0;
+try {
+output.writeObject(a);
+b = (int) input.readObject();
+} catch (IOException ex) {
+Logger.getLogger(OnlineTicTacToe.class.getName()).log(Level.SEVERE, null, ex);
+} catch (ClassNotFoundException ex) {
+Logger.getLogger(OnlineTicTacToe.class.getName()).log(Level.SEVERE, null, ex);
+}
+if (a == 0 && b == 0) {
+window.dispose();
+myTurn.notify();
+if (myMark == "O") {
+makeWindow(false);
+}
+//else makeWindow(true);
+}
+for (int i = 0; i < NBUTTONS; i++) {
+
+button[i].setEnabled(false);
+}
+}
+/**
+* Pops out another small window indicating that it's a draw
+*/
+private void showDraw() {
+JOptionPane.showMessageDialog(null, "It's a draw!");
+}
+/**
+* Is called by AWT whenever any button has been clicked. You have to:
+* <ol>
+* <li> check if it is my turn,
+* <li> check which button was clicked with whichButtonClicked( event ),
+* <li> mark the corresponding button with markButton( buttonId, mark ),
+* <li> check which button was clicked with whichButtonClicked( event ),
+* <li> mark the corresponding button with markButton( buttonId, mark ),
+* <li> send this information to my counterpart,
+* <li> checks if the game was completed with buttonMarkedWith( buttonId,
+* mark )
+* <li> shows a winning message with showWon( )
+*/
+
+@Override
+public void actionPerformed(ActionEvent event) {
+int i = whichButtonClicked(event);
+if (markButton(i, myMark)) {
+try {
+output.writeInt(i); // writes an int value which comprises of 4 bytes to the
+output stream
+output.flush(); //flushes the stream of buffer values if any
+System.out.println("counterpart value:" + i);
+} catch (SocketException se) {
+System.out.println("Player disconnected.");
+System.exit(0);
+} catch (IOException ioe) {
+error(ioe);
+}
+// if not a valid move return
+} else {
+return;
+}
+winnerCheck(myMark);
+// notify counterpart that my move is complete
+synchronized (myTurn) {
+myTurn[0] = false;
+// invoke the counterpart (notify the waited thread)
+myTurn.notify();
+}
+}
+//Going to check by noting the four dimensions on the
+board-Horizontal,vertical,diagnol // //2,4,6, and diagnol 0,4,8
+private boolean winnerCheck(String mark) {
+//Dimension 1:Check Horizontal:CASE 1
+for (int i = 0; i < 8; i = i + 3) {
+if (buttonMarkedWith(i, mark) && buttonMarkedWith(i + 1, mark)
+&& buttonMarkedWith(i + 2, mark)) {
+showWon(mark);
+return true;
+}
+}
+//Dimension 2 : check for the vertical:CASE 2
+for (int i = 0; i < 3; i = i + 1) {
+if (buttonMarkedWith(i, mark) && buttonMarkedWith(i + 3, mark)
+&& buttonMarkedWith(i + 6, mark)) {
+showWon(mark);
+return true;
+}
+}
+//Dimension 3: check for the diagnol 2,4,6:CASE 3
+if (buttonMarkedWith(2, mark) && buttonMarkedWith(4, mark)
+&& buttonMarkedWith(6, mark)) {
+showWon(mark);
+return true;
+}
+//Dimension 4: check for diagnol 0,4,8:CASE 4
+if (buttonMarkedWith(4, mark) && buttonMarkedWith(0, mark)
+&& buttonMarkedWith(8, mark)) {
+showWon(mark);
+return true;
+}
+//CASE 5 Incase of a draw
+/*
+* @param true if it has been marked in success
+*/
+for (int i = 0; i < NBUTTONS; i++) //Marks the 8buttons with ("X" or "O")
+{
+if (button[i].getText().equals("")) {
+break;
+}
+if (i == NBUTTONS - 1) // When the number of buttons equals "X" or "O" (i.e if "X"
+in 4 buttons and "Y" in 4 buttons respectively)
+{
+showDraw();
+return true;
+}
+}
+return false;
+}
+/**
+* This is a reader thread that keeps reading from and behaving as my
+* counterpart.
+*/
+private class Counterpart extends Thread {
+// prevent Counterpart being explicitly instantiated by callers
+// only constructed internally by parent class
+//This thread should keep reading the established TCP connection in order to check
+which button was clicked by the counterpart.
+private Counterpart() {
+}
+@Override
+public void run() {
+while (true) {
+try {
+synchronized (myTurn) {
+// There is a lock until I make a move
+if (myTurn[0]) {
+continue;
+}
+for (int i = 0; i < NBUTTONS; i++) {
+if (button[i].getText().equals("")) {
+button[i].setEnabled(false);
+}
+}
+System.out.println("waiting for value");
+int i = input.readInt();
+// blocked until counterpart writes to input stream
+System.out.println("counterpart value :" + i);
+markButton(i, yourMark);
+boolean isGameOver = winnerCheck(yourMark);
+try {
+if (!isGameOver) {
+for (int j = 0; j < NBUTTONS; j++) {
+if (button[j].getText().equals("")) {
+button[j].setEnabled(true);
+}
+}
+}
+// wait until the other player has made the move.
+myTurn.wait();
+} catch (InterruptedException ie) {
+}
+}
+} catch (SocketException se) {
+System.out.println("Player disconnected.");
+System.exit(0);
+} catch (java.io.EOFException eofe) {
+System.out.println("Player disconnected.");
+System.exit(0); // application exit
+} catch (Exception e) {
+error(e);
+}
+}
+}
+}
+}
